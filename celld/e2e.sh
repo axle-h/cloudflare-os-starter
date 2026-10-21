@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cloudflare OS e2e harness on celld (plan item 0.4 in celld's plans/cloudflare-os-fixes.md).
 #
-# Usage: celld/e2e.sh COMMAND [--router] [--fresh] [--dev-store]
+# Usage: celld/e2e.sh COMMAND [--router] [--fresh] [--dev-store] [--quick]
 #
 #   up       Start Azurite in podman (celld-e2e-azurite, port 10000), create the blob container
 #            celld-e2e-$RUN_ID, and start the mock LLM (celld/mock-llm.ts, port 11434).
@@ -13,9 +13,15 @@
 #   node     Start the node if it is not running, then check its health: `GET /` returns HTML and
 #            `ping()` round-trips over Cap'n Web at ws://…/api, within 60 s. Takes --router and
 #            --dev-store, which must match what was deployed and what is running.
-#   smoke    Not implemented yet (0.4 part 2).
-#   browser  Not implemented yet (0.4 part 2).
-#   all      up, build, check, deploy and node. Takes every option.
+#   restart  Stop the node and start it again, then check its health as node does. Takes --router
+#            and --dev-store. Smoke step S9 uses it.
+#   smoke    Run celld/e2e/smoke.ts, steps S0-S13, against the running node; it may restart the node
+#            (S9). Takes --router and --dev-store, which must match the running node, and --quick,
+#            which skips S12 (it waits more than 60 s).
+#   browser  Run celld/e2e/browser.ts, a Chromium session through the UI, against the running node.
+#            Screenshots go to .celld/e2e/shots/. Takes --router and --dev-store, as smoke does.
+#   all      up, build, check, deploy, node, smoke and browser. Takes every option. A smoke failure
+#            does not stop browser; all fails if either failed.
 #   down     Stop what this script started, and nothing else. The data stays unless --fresh is
 #            given: then it also removes the celld-e2e-azurite container (every run's blob
 #            container with it) and the node's local data.
@@ -26,6 +32,7 @@
 #   --fresh      With up or all: stop the node and start a new run, with a new RUN_ID (so a new,
 #                empty blob container) and empty local node data; with --dev-store, celld dev
 #                also starts with --clean.
+#   --quick      With smoke or all: skip smoke step S12, for quick loops.
 #   --dev-store  Run every Worker under one multi-config `celld dev`, with no Azurite and no podman.
 #                celld dev keeps its state in the primary config's directory, which is the
 #                project root, so in ./.celld/dev; --fresh clears it with --clean.
@@ -52,24 +59,26 @@ log() { echo "e2e: $*" >&2; }
 die() { echo "e2e: error: $*" >&2; exit 1; }
 
 command=${1:-}
-[[ -n "$command" ]] || die "usage: celld/e2e.sh up|build|check|deploy|node|smoke|browser|all|down [--router] [--fresh] [--dev-store]"
+[[ -n "$command" ]] || die "usage: celld/e2e.sh up|build|check|deploy|node|restart|smoke|browser|all|down [--router] [--fresh] [--dev-store] [--quick]"
 shift
 case "$command" in
   up) allowed="--fresh --dev-store" ;;
-  build | smoke | browser) allowed="" ;;
+  build) allowed="" ;;
   check) allowed="--router" ;;
-  deploy | node) allowed="--router --dev-store" ;;
-  all) allowed="--router --fresh --dev-store" ;;
+  deploy | node | restart | browser) allowed="--router --dev-store" ;;
+  smoke) allowed="--router --dev-store --quick" ;;
+  all) allowed="--router --fresh --dev-store --quick" ;;
   down) allowed="--fresh" ;;
   *) die "unknown command $command" ;;
 esac
-router=false fresh=false dev_store=false
+router=false fresh=false dev_store=false quick=false
 for arg in "$@"; do
   [[ " $allowed " == *" $arg "* ]] || die "$command does not take $arg${allowed:+ (it takes $allowed)}"
   case "$arg" in
     --router) router=true ;;
     --fresh) fresh=true ;;
     --dev-store) dev_store=true ;;
+    --quick) quick=true ;;
   esac
 done
 
@@ -425,7 +434,31 @@ cmd_down() {
   $stopped || $fresh || log "down: nothing of this script's was running"
 }
 
-not_yet() { die "$1 is not implemented yet (0.4 part 2)"; }
+# Refuses to run against no node, or a node of another mode.
+require_running_node() {
+  node_alive || die "no node is running; run node$($router && echo ' --router')$($dev_store && echo ' --dev-store') first"
+  require_node_mode
+}
+
+cmd_restart() {
+  require_running_node
+  stop_node
+  cmd_node
+}
+
+cmd_smoke() {
+  require_running_node
+  local flags=()
+  if $router; then flags+=(--router); fi
+  if $dev_store; then flags+=(--dev-store); fi
+  if $quick; then flags+=(--quick); fi
+  E2E_STATE="$STATE" node celld/e2e/smoke.ts "$(cat "$STATE/origin")" "${flags[@]}"
+}
+
+cmd_browser() {
+  require_running_node
+  E2E_STATE="$STATE" node celld/e2e/browser.ts "$(cat "$STATE/origin")"
+}
 
 case "$command" in
   up) require_tools; cmd_up ;;
@@ -433,7 +466,9 @@ case "$command" in
   check) require_tools; cmd_check ;;
   deploy) require_tools; cmd_deploy ;;
   node) require_tools; cmd_node ;;
-  smoke | browser) not_yet "$command" ;;
+  restart) require_tools; cmd_restart ;;
+  smoke) require_tools; cmd_smoke ;;
+  browser) require_tools; cmd_browser ;;
   all)
     require_tools
     cmd_up
@@ -441,7 +476,11 @@ case "$command" in
     cmd_check
     cmd_deploy
     cmd_node
-    log "all: smoke and browser are not implemented yet (0.4 part 2)"
+    failed=()
+    cmd_smoke || failed+=(smoke)
+    cmd_browser || failed+=(browser)
+    ((${#failed[@]} == 0)) || die "all: failed: ${failed[*]}"
+    log "all: smoke and browser passed"
     ;;
   down) cmd_down ;;
 esac
