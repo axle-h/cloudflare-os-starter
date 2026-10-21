@@ -69,14 +69,6 @@ export function celldFilter(input: Config): { config: Config; dropped: string[] 
     for (const rule of config.rules) delete rule.fallthrough;
     dropped.push("rules[].fallthrough");
   }
-  // celld exposes a class as a namespace in `ctx.exports` only when a `durable_objects` binding
-  // names it; Cloudflare also does so for a class that only a migration declares.
-  const migrated: string[] = (config.migrations ?? []).flatMap((m: Config) => m.new_sqlite_classes ?? []);
-  if (migrated.length) {
-    config.durable_objects = {
-      bindings: migrated.map((name) => ({ name: `CELLD_DO_${name}`, class_name: name })),
-    };
-  }
   return { config, dropped };
 }
 

@@ -6,7 +6,7 @@ first, then open the node's origin (`.celld/e2e/origin`) in a browser, signed in
 
 ## Phase 1: loud gaps and small fixes
 
-- [ ] [1.3] Without W4 in `generate.ts`, a fresh bucket deploys; sign-up, admin settings and the
+- [x] [1.3] Without W4 in `generate.ts`, a fresh bucket deploys; sign-up, admin settings and the
       user DO work.
 - [ ] [1.4] An error report from the workshop carries the `service` and `environment` props.
 - [ ] [1.6] `generate.ts --keep-unsupported`, minus `ai`/`browser`, deploys.
