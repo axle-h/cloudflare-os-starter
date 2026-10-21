@@ -7,9 +7,10 @@
 #            celld-e2e-$RUN_ID, and start the mock LLM (celld/mock-llm.ts, port 11434).
 #            Takes --fresh and --dev-store.
 #   build    Run celld/build.sh, unless the last build is newer than every source file.
-#   check    Generate the configs and run `celld deploy --dry-run` for every Worker. Takes --router.
-#   deploy   Deploy every Worker with celld/deploy.sh. With --dev-store, only generate the configs.
-#            Takes --router and --dev-store.
+#   check    Generate the configs and run `celld deploy --dry-run` for every Worker, which also runs
+#            each Worker's build.command. Takes --router.
+#   deploy   Deploy every Worker with celld/deploy.sh, which runs each build.command again. With
+#            --dev-store, only generate the configs. Takes --router and --dev-store.
 #   node     Start the node if it is not running, then check its health: `GET /` returns HTML and
 #            `ping()` round-trips over Cap'n Web at ws://…/api, within 60 s. Takes --router and
 #            --dev-store, which must match what was deployed and what is running.
@@ -20,7 +21,8 @@
 #            which skips S12 (it waits more than 60 s).
 #   browser  Run celld/e2e/browser.ts, a Chromium session through the UI, against the running node.
 #            Screenshots go to .celld/e2e/shots/. Takes --router and --dev-store, as smoke does.
-#   all      up, build, check, deploy, node, smoke and browser. Takes every option. A smoke failure
+#   all      up, build, check, deploy, node, smoke and browser. Takes every option. Its deploy
+#            passes --no-build, because check has just run every build.command. A smoke failure
 #            does not stop browser; all fails if either failed.
 #   down     Stop what this script started, and nothing else. The data stays unless --fresh is
 #            given: then it also removes the celld-e2e-azurite container (every run's blob
@@ -276,18 +278,18 @@ cmd_up() {
 
 cmd_build() {
   local stamp="$STATE/build.stamp" next="$STATE/build.stamp.next" newer=""
+  # The Workers' own build.command outputs (.wrangler/validate) come from celld deploy, not here.
   local outputs=(
     cloudflare-os/packages/workshop-frontend/dist/index.html
-    cloudflare-os/packages/workshop-backend/.wrangler/validate
-    cloudflare-os/packages/gatekeeper-context/.wrangler/validate
-    cloudflare-os/packages/gatekeeper-scheduler/.wrangler/validate
-    cloudflare-os/packages/gatekeeper-websearch/.wrangler/validate
-    packages/custom-gatekeeper/.wrangler/validate
+    cloudflare-os/packages/gatekeeper-context/dist-app
+    cloudflare-os/packages/gatekeeper-scheduler/dist-app
   )
   if [[ -f "$stamp" ]]; then
-    # Build outputs (dist, dist-app, .wrangler) are not sources.
+    # Build outputs (dist, dist-app, .wrangler) are not sources, and neither is what the workshop's
+    # build.command writes to src/generated, which check and deploy run after this build.
     newer=$(find cloudflare-os/packages packages celld/build.sh pnpm-lock.yaml \
-      \( -name node_modules -o -name 'dist*' -o -name .wrangler -o -name '.vite*' -o -name coverage \) -prune \
+      \( -name node_modules -o -name 'dist*' -o -name .wrangler -o -name '.vite*' -o -name coverage \
+      -o -path cloudflare-os/packages/workshop-backend/src/generated \) -prune \
       -o -type f -newer "$stamp" -print -quit)
     local missing=false output
     for output in "${outputs[@]}"; do [[ -e "$output" ]] || missing=true; done
@@ -319,7 +321,10 @@ cmd_check() {
   ((failed == 0)) || die "check: celld deploy --dry-run refused at least one Worker"
 }
 
+# With --no-build, `celld deploy` skips each build.command: `all` passes it after check ran them.
 cmd_deploy() {
+  local no_build=()
+  if [[ "${1:-}" == --no-build ]]; then no_build=(--no-build); fi
   require_node_mode
   if $dev_store; then
     generate
@@ -333,7 +338,7 @@ cmd_deploy() {
   # With CELLD_NODE_LOG set, deploy.sh fails when the running node does not adopt the deploy.
   local node_log=/dev/null
   if node_alive; then node_log="$STATE/node.log"; fi
-  CELLD_NODE_LOG=$node_log celld/deploy.sh $(generate_flags) 2> >(without_dropped >&2)
+  CELLD_NODE_LOG=$node_log celld/deploy.sh $(generate_flags) "${no_build[@]}" 2> >(without_dropped >&2)
   echo "$(run_id) $(wanted_mode)" > "$STATE/deployed"
   log "deploy: deployed to $CELLD_BUCKET ($($router && echo router || echo workshop) primary)"
 }
@@ -474,7 +479,7 @@ case "$command" in
     cmd_up
     cmd_build
     cmd_check
-    cmd_deploy
+    cmd_deploy --no-build
     cmd_node
     failed=()
     cmd_smoke || failed+=(smoke)

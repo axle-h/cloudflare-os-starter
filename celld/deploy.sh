@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Generate the celld configs and deploy every Worker; the last one deployed is the fleet's primary.
-# Arguments go to generate.ts. With --no-router the workshop is deployed last and serves the frontend.
+# Arguments go to generate.ts, except --no-build, which goes to `celld deploy`: it skips each Worker's
+# build.command, for when a `celld deploy --dry-run` of the same sources has just run it. With
+# --no-router the workshop is deployed last and serves the frontend.
 #
 # A running node adopts a deploy on its next poll; deploy.sh asks the node whose log is
 # .celld/node.log to reload at once, and reports a failed reload without failing. Setting
@@ -8,11 +10,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . celld/env.sh
-node celld/generate.ts "$@"
+generate_args=() deploy_args=()
+for arg in "$@"; do
+  if [[ "$arg" == --no-build ]]; then deploy_args+=(--no-build); else generate_args+=("$arg"); fi
+done
+node celld/generate.ts "${generate_args[@]}"
 workers=(error-reporter gatekeeper-context gatekeeper-scheduler gatekeeper-websearch custom-gatekeeper)
 if [[ " $* " == *" --no-router "* ]]; then workers+=(router workshop-backend); else workers+=(workshop-backend router); fi
 for worker in "${workers[@]}"; do
-  if ! out=$("$CELLD" deploy "celld.$worker.jsonc" --bucket "$CELLD_BUCKET" 2>&1); then
+  if ! out=$("$CELLD" deploy "celld.$worker.jsonc" --bucket "$CELLD_BUCKET" "${deploy_args[@]}" 2>&1); then
     echo "$out" | sed "s/^/$worker: /" >&2
     echo "deploy.sh: celld deploy failed for $worker" >&2
     exit 1

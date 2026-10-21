@@ -23,9 +23,9 @@ celld/e2e.sh down          # stop what e2e.sh started
 | Command | What it does |
 | --- | --- |
 | `up` | Starts Azurite 3.37.0 (pinned by digest) in podman as `celld-e2e-azurite` on port 10000, creates the blob container `celld-e2e-$RUN_ID`, and starts the mock LLM on port 11434. |
-| `build` | Runs `build.sh`, unless the last build is newer than every source file. |
-| `check` | Generates the configs and runs `celld deploy --dry-run` for every Worker. |
-| `deploy` | Deploys every Worker with `deploy.sh` to `az://celld-e2e-$RUN_ID`. If the node is running, it must adopt the deploy, or `deploy` fails. |
+| `build` | Runs `build.sh` (the gatekeepers' app bundles and the frontend), unless the last build is newer than every source file. |
+| `check` | Generates the configs and runs `celld deploy --dry-run` for every Worker, which runs each Worker's `build.command` too. |
+| `deploy` | Deploys every Worker with `deploy.sh` to `az://celld-e2e-$RUN_ID`, running each `build.command` again; `all` passes `--no-build` instead, right after `check`. If the node is running, it must adopt the deploy, or `deploy` fails. |
 | `node` | Starts the node on 127.0.0.1:8790, logging to `.celld/e2e/node.log`, then checks that `GET /` returns HTML and that `ping()` round-trips over Cap'n Web at `ws://…/api`, within 60 s. On failure it prints the last 200 log lines. `--router` and `--dev-store` must match the deploy and any running node. |
 | `restart` | Stops the node and starts it again, with `node`'s health check. Smoke step S9 uses it. |
 | `smoke` | Runs `e2e/smoke.ts` (steps S0-S13, below) against the running node. Exits non-zero if a step failed. |
@@ -129,9 +129,12 @@ node may reach the mock once celld refuses private fetch targets.
    python3 celld/azurite-container.py celld
    ```
 
-2. Build the Workers: `celld/build.sh`.
+2. Build the frontend and the gatekeepers' app bundles: `celld/build.sh`. Each Worker's own
+   `build.command` (capnweb-validate, and the workshop's browser runtime) runs in the next step:
+   `celld deploy` runs it, as `wrangler deploy` does.
 3. Deploy: `celld/deploy.sh --no-router`. Without `--no-router` the router is the entry point, but
    celld cannot yet return a WebSocket through a service binding, so the `/api` session fails.
+   `--no-build` skips every `build.command`, when they have just run.
 4. Run a node:
 
    ```sh
@@ -142,6 +145,10 @@ node may reach the mock once celld refuses private fetch targets.
 5. Open http://127.0.0.1:8790 and sign up as `admin` (the configured admin; the trial password
    is in `celld/env.sh`).
 
-`generate.ts` documents each workaround it applies to the configs. It also exports them:
-`celldFilter(config)` applies them to one Wrangler config, and `generateConfigs(options)` builds
-every Worker's config without writing files.
+`generate.ts` writes each Worker's Wrangler config as upstream generates it, with its package paths
+(`main`, `assets.directory`, `build.cwd`, `build.watch_dir`) rebased onto the project root, plus the
+bindings `cf-os deploy` adds. Besides `--no-router`, one workaround is left: celld refuses the `ai`
+and `browser` bindings, so they are dropped; `--keep-unsupported` keeps them, to see `celld deploy`
+refuse them. `ADMINS` is a JSON var, an array, as on Cloudflare. The module exports
+`celldFilter(config)`, which applies the workaround to one Wrangler config, and
+`generateConfigs(options)`, which builds every Worker's config without writing files.

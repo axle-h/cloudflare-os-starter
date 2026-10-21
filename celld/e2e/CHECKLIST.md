@@ -9,9 +9,9 @@ first, then open the node's origin (`.celld/e2e/origin`) in a browser, signed in
 - [x] [1.3] Without W4 in `generate.ts`, a fresh bucket deploys; sign-up, admin settings and the
       user DO work.
 - [ ] [1.4] An error report from the workshop carries the `service` and `environment` props.
-- [ ] [1.6] `generate.ts --keep-unsupported`, minus `ai`/`browser`, deploys.
-- [ ] [1.6] `build.sh` has no capnweb-validate loop.
-- [ ] [1.6] Signing in as admin opens `/admin`, with `ADMINS` a real array.
+- [x] [1.6] `generate.ts --keep-unsupported`, minus `ai`/`browser`, deploys.
+- [x] [1.6] `build.sh` has no capnweb-validate loop.
+- [x] [1.6] Signing in as admin opens `/admin`, with `ADMINS` a real array.
 - [ ] [1.7] Router mode (`all --router`): the UI loads past "Can't reach the server", and DevTools
       shows the `/api` 101 with `Upgrade`.
 - [ ] [1.7] No "dropped a frame" lines in `.celld/e2e/node.log`; smoke S10 passes.

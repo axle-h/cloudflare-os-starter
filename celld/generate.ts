@@ -1,15 +1,19 @@
 // Generates celld deploy configs for a local trial of Cloudflare OS on celld.
 //
-// Mirrors `generateConfigs()` in packages/cf-os/src/core/deployment.ts for the default Workers, but
-// emits only the Wrangler keys `celld deploy` accepts. Each config is written to the project root as
-// `celld.<worker>.jsonc`, because celld resolves `main` and `assets.directory` inside the config's
-// own directory and the router's assets live in a sibling package.
+// Mirrors `generateConfigs()` in packages/cf-os/src/core/deployment.ts for the default Workers. Each
+// config is written to the project root as `celld.<worker>.jsonc`, because celld resolves `main` and
+// `assets.directory` inside the config's own directory and the router's assets live in a sibling
+// package. `build.cwd` and `build.watch_dir` are rebased onto the Worker's package, so `celld deploy`
+// runs each Worker's `build.command` (its capnweb-validate step) where `wrangler deploy` would.
+//
+// The one workaround left: celld refuses the `ai` and `browser` bindings (decision D9), so they are
+// dropped.
 //
 // Sign-in is upstream's built-in password accounts: no CF_ACCESS_* vars, and the frontend built
 // without VITE_CF_ACCESS_MODE.
 //
 // Usage: node celld/generate.ts [--keep-unsupported] [--no-router]
-//   --keep-unsupported  keep the keys celld refuses, to see `celld deploy` reject them.
+//   --keep-unsupported  keep `ai` and `browser`, to see `celld deploy` refuse them.
 //   --no-router         serve the frontend from the workshop and make it the primary Worker.
 //                       celld drops a WebSocket response returned through a service binding, so the
 //                       router cannot proxy the /api WebSocket.
@@ -47,12 +51,8 @@ export const deployOrder: Worker[] = [
   "router",
 ];
 
-const SUPPORTED_KEYS = new Set([
-  "$schema", "name", "main", "no_bundle", "compatibility_date", "compatibility_flags",
-  "durable_objects", "migrations", "assets", "services", "triggers", "vars", "d1_databases",
-  "kv_namespaces", "queues", "workflows", "r2_buckets", "worker_loaders", "containers", "define",
-  "rules",
-]);
+/** The keys celld refuses that the Workers use: the AI and Browser Rendering bindings (D9). */
+const REFUSED_KEYS = ["ai", "browser"];
 
 /**
  * Applies the celld workarounds to one Wrangler config and returns a new config, with the keys it
@@ -60,15 +60,8 @@ const SUPPORTED_KEYS = new Set([
  */
 export function celldFilter(input: Config): { config: Config; dropped: string[] } {
   const config = structuredClone(input);
-  // celld runs the build itself; the capnweb-validate step must run before deploy.
-  const dropped = Object.keys(config).filter((key) => !SUPPORTED_KEYS.has(key));
+  const dropped = REFUSED_KEYS.filter((key) => key in config);
   for (const key of dropped) delete config[key];
-  delete config.$schema;
-  // celld has no `fallthrough`: a rule's extension always selects its loader.
-  if (config.rules?.some((rule: Config) => "fallthrough" in rule)) {
-    for (const rule of config.rules) delete rule.fallthrough;
-    dropped.push("rules[].fallthrough");
-  }
   return { config, dropped };
 }
 
@@ -81,8 +74,15 @@ function readJsonc(path: string): Config {
 /** Rebase the package-relative paths of a base config onto the project root. */
 function rebase(config: Config, dir: string): Config {
   const out = structuredClone(config);
+  delete out.$schema;
   if (out.main) out.main = join(dir, out.main);
   if (out.assets?.directory) out.assets.directory = join(dir, out.assets.directory);
+  if (out.build?.command) {
+    // Wrangler's defaults, `.` and `src`, are relative to the package.
+    out.build.cwd = join(dir, out.build.cwd ?? ".");
+    const watch = out.build.watch_dir ?? "src";
+    out.build.watch_dir = Array.isArray(watch) ? watch.map((path: string) => join(dir, path)) : join(dir, watch);
+  }
   return out;
 }
 
@@ -118,9 +118,8 @@ export function generateConfigs(options: GenerateOptions = {}): {
 
   configs["workshop-backend"] = base("workshop-backend");
   Object.assign(configs["workshop-backend"], {
-    // celld takes only string vars; upstream also parses ADMINS from a JSON string. Password-mode
-    // admins are usernames.
-    vars: { ADMINS: JSON.stringify(["admin"]), PUBLIC_BASE_URL: publicBaseUrl },
+    // A JSON var, as on Cloudflare. Password-mode admins are usernames.
+    vars: { ADMINS: ["admin"], PUBLIC_BASE_URL: publicBaseUrl },
     ai: { binding: "WORKERS_AI" },
     services: [
       {
@@ -171,10 +170,7 @@ export function generateConfigs(options: GenerateOptions = {}): {
 
   const dropped: Partial<Record<Worker, string[]>> = {};
   for (const worker of deployOrder) {
-    if (keepUnsupported) {
-      delete configs[worker].$schema;
-      continue;
-    }
+    if (keepUnsupported) continue;
     const filtered = celldFilter(configs[worker]);
     configs[worker] = filtered.config;
     if (filtered.dropped.length) dropped[worker] = filtered.dropped;
