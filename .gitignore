@@ -5,3 +5,5 @@ packages/*/.wrangler/
 packages/*/wrangler.prod.jsonc
 deployment.local.jsonc
 .cf-os/
+celld.*.jsonc
+.celld/
