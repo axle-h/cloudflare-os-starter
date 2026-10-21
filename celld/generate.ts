@@ -14,9 +14,9 @@
 //
 // Usage: node celld/generate.ts [--keep-unsupported] [--no-router]
 //   --keep-unsupported  keep `ai` and `browser`, to see `celld deploy` refuse them.
-//   --no-router         serve the frontend from the workshop and make it the primary Worker.
-//                       celld drops a WebSocket response returned through a service binding, so the
-//                       router cannot proxy the /api WebSocket.
+//   --no-router         serve the frontend from the workshop and make it the primary Worker,
+//                       instead of the router. It was workaround W5, for a WebSocket returned
+//                       through a service binding (celld plan item 1.7 fixed it).
 //
 // Importing the module writes nothing: `celldFilter` applies the workarounds to one config, and
 // `generateConfigs` builds every Worker's config.

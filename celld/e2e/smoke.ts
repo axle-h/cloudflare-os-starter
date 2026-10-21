@@ -2,7 +2,8 @@
 // browser does, through steps S0-S13 of plan item 0.4 (celld's plans/cloudflare-os-fixes.md).
 //
 // Usage: node celld/e2e/smoke.ts ORIGIN [--router] [--dev-store] [--quick]
-//   --router     the node runs with the router as the primary Worker; enables S10.
+//   --router     the node runs with the router as the primary Worker (e2e.sh's default, which
+//                passes this unless --no-router); enables S10.
 //   --dev-store  the node is a `celld dev`; only passed on to `e2e.sh restart` for S9.
 //   --quick      skip S12, which waits more than 60 s.
 //
@@ -419,7 +420,7 @@ const steps: Step[] = [
       const unclosed = await Session.closeAll();
       if (unclosed.length) throw new Error(`sessions still open before the restart: ${unclosed.map(s => s.label).join(", ")}`);
       const restartArgs = ["celld/e2e.sh", "restart",
-        ...(router ? ["--router"] : []), ...(devStore ? ["--dev-store"] : [])];
+        ...(router ? [] : ["--no-router"]), ...(devStore ? ["--dev-store"] : [])];
       nodeLog.beforeRestart();
       try {
         await new Promise<void>((resolve, reject) => {
@@ -480,7 +481,7 @@ const steps: Step[] = [
     id: "S10", title: "S1-S7 through the router", covers: "trial 5",
     needs: [], timeoutMs: 1_000,
     async run() {
-      if (!router) skip("runs only with --router");
+      if (!router) skip("runs only in router mode, not with e2e.sh --no-router");
       // With --router the router is the primary Worker, so S1-S7 above already went through it.
       const failed = ["S1", "S2", "S3", "S4", "S5", "S6", "S7"].filter(id => results.get(id)?.status !== "PASS");
       if (failed.length) throw new Error(`not passed through the router: ${failed.join(", ")}`);

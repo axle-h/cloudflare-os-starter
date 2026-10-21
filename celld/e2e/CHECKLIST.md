@@ -12,10 +12,10 @@ first, then open the node's origin (`.celld/e2e/origin`) in a browser, signed in
 - [x] [1.6] `generate.ts --keep-unsupported`, minus `ai`/`browser`, deploys.
 - [x] [1.6] `build.sh` has no capnweb-validate loop.
 - [x] [1.6] Signing in as admin opens `/admin`, with `ADMINS` a real array.
-- [ ] [1.7] Router mode (`all --router`): the UI loads past "Can't reach the server", and DevTools
-      shows the `/api` 101 with `Upgrade`.
+- [x] [1.7] Router mode (now `all`'s default): the UI loads past "Can't reach the server", and
+      DevTools shows the `/api` 101 with `Upgrade`.
 - [ ] [1.7] No "dropped a frame" lines in `.celld/e2e/node.log`; smoke S10 passes.
-- [ ] [1.7] `--no-router` is gone from the README.
+- [x] [1.7] `--no-router` is gone from the README.
 - [ ] [1.8] Smoke S7 gets past the pack read; "Create Gadget" no longer shows "Invalid reader
       mode".
 - [ ] [1.9] The mock LLM works with `CELLD_FETCH_PRIVATE_ALLOW` from `env.sh`.

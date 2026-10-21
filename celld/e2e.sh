@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
 # Cloudflare OS e2e harness on celld (plan item 0.4 in celld's plans/cloudflare-os-fixes.md).
 #
-# Usage: celld/e2e.sh COMMAND [--router] [--fresh] [--dev-store] [--quick]
+# Usage: celld/e2e.sh COMMAND [--no-router] [--fresh] [--dev-store] [--quick]
 #
 #   up       Start Azurite in podman (celld-e2e-azurite, port 10000), create the blob container
 #            celld-e2e-$RUN_ID, and start the mock LLM (celld/mock-llm.ts, port 11434).
 #            Takes --fresh and --dev-store.
 #   build    Run celld/build.sh, unless the last build is newer than every source file.
 #   check    Generate the configs and run `celld deploy --dry-run` for every Worker, which also runs
-#            each Worker's build.command. Takes --router.
+#            each Worker's build.command. Takes --no-router.
 #   deploy   Deploy every Worker with celld/deploy.sh, which runs each build.command again. With
-#            --dev-store, only generate the configs. Takes --router and --dev-store.
+#            --dev-store, only generate the configs. Takes --no-router and --dev-store.
 #   node     Start the node if it is not running, then check its health: `GET /` returns HTML and
-#            `ping()` round-trips over Cap'n Web at ws://…/api, within 60 s. Takes --router and
+#            `ping()` round-trips over Cap'n Web at ws://…/api, within 60 s. Takes --no-router and
 #            --dev-store, which must match what was deployed and what is running.
-#   restart  Stop the node and start it again, then check its health as node does. Takes --router
+#   restart  Stop the node and start it again, then check its health as node does. Takes --no-router
 #            and --dev-store. Smoke step S9 uses it.
 #   smoke    Run celld/e2e/smoke.ts, steps S0-S13, against the running node; it may restart the node
-#            (S9). Takes --router and --dev-store, which must match the running node, and --quick,
+#            (S9). Takes --no-router and --dev-store, which must match the running node, and --quick,
 #            which skips S12 (it waits more than 60 s).
 #   browser  Run celld/e2e/browser.ts, a Chromium session through the UI, against the running node.
-#            Screenshots go to .celld/e2e/shots/. Takes --router and --dev-store, as smoke does.
+#            Screenshots go to .celld/e2e/shots/. Takes --no-router and --dev-store, as smoke does.
 #   all      up, build, check, deploy, node, smoke and browser. Takes every option. Its deploy
 #            passes --no-build, because check has just run every build.command. A smoke failure
 #            does not stop browser; all fails if either failed.
@@ -28,9 +28,9 @@
 #            given: then it also removes the celld-e2e-azurite container (every run's blob
 #            container with it) and the node's local data.
 #
-#   --router     Make the router the primary Worker. Without it the workshop is the primary and
-#                serves the frontend (workaround W5): celld cannot yet return a WebSocket through a
-#                service binding (trial failure 5, plan item 1.7).
+#   --no-router  Make the workshop the primary Worker and serve the frontend from it, instead of
+#                the router, as on Cloudflare. It was workaround W5 for trial failure 5, which plan
+#                item 1.7 fixed; it stays for comparing the two entry points.
 #   --fresh      With up or all: stop the node and start a new run, with a new RUN_ID (so a new,
 #                empty blob container) and empty local node data; with --dev-store, celld dev
 #                also starts with --clean.
@@ -61,23 +61,23 @@ log() { echo "e2e: $*" >&2; }
 die() { echo "e2e: error: $*" >&2; exit 1; }
 
 command=${1:-}
-[[ -n "$command" ]] || die "usage: celld/e2e.sh up|build|check|deploy|node|restart|smoke|browser|all|down [--router] [--fresh] [--dev-store] [--quick]"
+[[ -n "$command" ]] || die "usage: celld/e2e.sh up|build|check|deploy|node|restart|smoke|browser|all|down [--no-router] [--fresh] [--dev-store] [--quick]"
 shift
 case "$command" in
   up) allowed="--fresh --dev-store" ;;
   build) allowed="" ;;
-  check) allowed="--router" ;;
-  deploy | node | restart | browser) allowed="--router --dev-store" ;;
-  smoke) allowed="--router --dev-store --quick" ;;
-  all) allowed="--router --fresh --dev-store --quick" ;;
+  check) allowed="--no-router" ;;
+  deploy | node | restart | browser) allowed="--no-router --dev-store" ;;
+  smoke) allowed="--no-router --dev-store --quick" ;;
+  all) allowed="--no-router --fresh --dev-store --quick" ;;
   down) allowed="--fresh" ;;
   *) die "unknown command $command" ;;
 esac
-router=false fresh=false dev_store=false quick=false
+router=true fresh=false dev_store=false quick=false
 for arg in "$@"; do
   [[ " $allowed " == *" $arg "* ]] || die "$command does not take $arg${allowed:+ (it takes $allowed)}"
   case "$arg" in
-    --router) router=true ;;
+    --no-router) router=false ;;
     --fresh) fresh=true ;;
     --dev-store) dev_store=true ;;
     --quick) quick=true ;;
@@ -349,7 +349,7 @@ cmd_node() {
     log "node: already running ($(cat "$STATE/origin"))"
   else
     port_open "$PORT" && die "port $PORT is taken by something other than this script's node; stop it or set E2E_PORT"
-    local redo="deploy$($router && echo ' --router')$($dev_store && echo ' --dev-store')"
+    local redo="deploy$($router || echo ' --no-router')$($dev_store && echo ' --dev-store')"
     if $dev_store; then
       [[ "$(cat "$STATE/generated" 2> /dev/null)" == "$(wanted_mode)" ]] \
         || die "the configs were not generated for '$(wanted_mode)'; run $redo first"
@@ -441,7 +441,7 @@ cmd_down() {
 
 # Refuses to run against no node, or a node of another mode.
 require_running_node() {
-  node_alive || die "no node is running; run node$($router && echo ' --router')$($dev_store && echo ' --dev-store') first"
+  node_alive || die "no node is running; run node$($router || echo ' --no-router')$($dev_store && echo ' --dev-store') first"
   require_node_mode
 }
 

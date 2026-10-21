@@ -11,7 +11,7 @@ to use another, such as `target/lab/celld`.
 
 ## The e2e harness
 
-`celld/e2e.sh COMMAND [--router] [--fresh] [--dev-store] [--quick]` brings everything up in one
+`celld/e2e.sh COMMAND [--fresh] [--dev-store] [--quick]` brings everything up in one
 command and keeps its state under `.celld/e2e/`:
 
 ```sh
@@ -26,17 +26,15 @@ celld/e2e.sh down          # stop what e2e.sh started
 | `build` | Runs `build.sh` (the gatekeepers' app bundles and the frontend), unless the last build is newer than every source file. |
 | `check` | Generates the configs and runs `celld deploy --dry-run` for every Worker, which runs each Worker's `build.command` too. |
 | `deploy` | Deploys every Worker with `deploy.sh` to `az://celld-e2e-$RUN_ID`, running each `build.command` again; `all` passes `--no-build` instead, right after `check`. If the node is running, it must adopt the deploy, or `deploy` fails. |
-| `node` | Starts the node on 127.0.0.1:8790, logging to `.celld/e2e/node.log`, then checks that `GET /` returns HTML and that `ping()` round-trips over Cap'n Web at `ws://…/api`, within 60 s. On failure it prints the last 200 log lines. `--router` and `--dev-store` must match the deploy and any running node. |
+| `node` | Starts the node on 127.0.0.1:8790, logging to `.celld/e2e/node.log`, then checks that `GET /` returns HTML and that `ping()` round-trips over Cap'n Web at `ws://…/api`, within 60 s. On failure it prints the last 200 log lines. `--dev-store` must match the deploy and any running node. |
 | `restart` | Stops the node and starts it again, with `node`'s health check. Smoke step S9 uses it. |
 | `smoke` | Runs `e2e/smoke.ts` (steps S0-S13, below) against the running node. Exits non-zero if a step failed. |
 | `browser` | Runs `e2e/browser.ts` (steps B0-B5, below) in headless Chromium against the running node. Screenshots go to `.celld/e2e/shots/`. |
 | `all` | `up`, `build`, `check`, `deploy`, `node`, `smoke` and `browser`. A smoke failure does not stop `browser`; `all` fails if either failed. |
 | `down` | Stops the node, the mock LLM and Azurite if this script started them. The data stays: every run's blob container accumulates in `celld-e2e-azurite` until `down --fresh` removes the container, and the node's local data with it. |
 
-- **`--router`** makes the router the primary Worker, as on Cloudflare. Without it the workshop
-  is the primary and serves the frontend, because celld cannot yet return a WebSocket through a
-  service binding: with `--router` the health check fails at `ping()` (trial failure 5), so `all
-  --router` stops there; `smoke --router` still runs against that node.
+- The router is the primary Worker, as on Cloudflare: it serves the frontend and proxies `/api`,
+  WebSocket included, to the workshop over a service binding.
 - **`--fresh`** (with `up` or `all`) starts a new run: a new run id, so an empty blob container,
   and empty local node data.
 - **`--quick`** (with `smoke` or `all`) skips smoke step S12, which waits more than 60 s.
@@ -47,8 +45,8 @@ celld/e2e.sh down          # stop what e2e.sh started
   `./.celld/dev`.
 
 Every command can be run again: it skips what is already up or built, and it refuses options it
-does not use. `restart`, `smoke` and `browser` need a running node, and `--router` and
-`--dev-store` must match it. `E2E_PORT` moves the node, `E2E_AZURITE_PORT` moves Azurite and `MOCK_LLM_PORT` moves
+does not use. `restart`, `smoke` and `browser` need a running node, and `--dev-store` must match
+it. `E2E_PORT` moves the node, `E2E_AZURITE_PORT` moves Azurite and `MOCK_LLM_PORT` moves
 the mock LLM, for instance beside the manual setup below. An existing `celld-e2e-azurite` keeps the
 port it was created with; `up` refuses one on another port.
 
@@ -64,7 +62,7 @@ it started).
 
 | Step | What it does |
 | --- | --- |
-| S0 | `GET /` returns HTML; `ping()` as a Cap'n Web HTTP batch through `POST /api` (with `--router`, through the router's service binding) |
+| S0 | `GET /` returns HTML; `ping()` as a Cap'n Web HTTP batch through `POST /api` (through the router's service binding) |
 | S1 | sign in; `amIAdmin()` is true; `getAdminApi()` returns a stub |
 | S2 | `setGatekeeperMode` for every auto-provisioning gatekeeper: `optional` (the default), and `custom` to `disabled`, so S9 has a non-default mode to find |
 | S3 | `subscribeToNotifications`, then dispose it; the session still answers |
@@ -74,7 +72,7 @@ it started).
 | S7 | `newGadgetFromBlueprint` on the first featured blueprint, then `getMetadata()` has a title |
 | S8 | a scripted `executeCode` registers `env.SCHEDULER.runAt(t, self)`, `t` 60 s out; the hook is enabled (failing if that comes within 5 s of `t`); an `onSchedule` agentCallback message reaches the chat |
 | S9 | `e2e.sh restart`; sign in again; S2's `custom` mode (then put back to `optional`), S5's account and S6's reply survive (each checked if its step passed) |
-| S10 | with `--router` only: S1-S7 passed, all of them through the router |
+| S10 | S1-S7 passed, all of them through the router |
 | S11 | every smoke `/api` WebSocket closed, none with 1006, and the run's `node.log` (both sides of S9's restart) has none of the known failure messages; "dropped a frame for a closed WebSocket" counts only if a socket closed with 1006, since celld logs it on every clean disconnect, and for the whole run, since the log's `ws_id` cannot be tied to a client socket |
 | S12 | two sessions open S6's workspace; after 65 s, a `setTitle` in one reaches the other's metadata subscription. The PASS line says how many isolates retired meanwhile; celld does not log which isolate serves a session, so it cannot confirm the sessions' own isolate retired |
 | S13 | a scripted `executeCode` calls `env.GADGET.rpc.getDocument()` in a Workspace Docs workspace |
@@ -132,9 +130,8 @@ node may reach the mock once celld refuses private fetch targets.
 2. Build the frontend and the gatekeepers' app bundles: `celld/build.sh`. Each Worker's own
    `build.command` (capnweb-validate, and the workshop's browser runtime) runs in the next step:
    `celld deploy` runs it, as `wrangler deploy` does.
-3. Deploy: `celld/deploy.sh --no-router`. Without `--no-router` the router is the entry point, but
-   celld cannot yet return a WebSocket through a service binding, so the `/api` session fails.
-   `--no-build` skips every `build.command`, when they have just run.
+3. Deploy: `celld/deploy.sh`. The router is the entry point, as on Cloudflare. `--no-build` skips
+   every `build.command`, when they have just run.
 4. Run a node:
 
    ```sh
@@ -147,7 +144,7 @@ node may reach the mock once celld refuses private fetch targets.
 
 `generate.ts` writes each Worker's Wrangler config as upstream generates it, with its package paths
 (`main`, `assets.directory`, `build.cwd`, `build.watch_dir`) rebased onto the project root, plus the
-bindings `cf-os deploy` adds. Besides `--no-router`, one workaround is left: celld refuses the `ai`
+bindings `cf-os deploy` adds. One workaround is left: celld refuses the `ai`
 and `browser` bindings, so they are dropped; `--keep-unsupported` keeps them, to see `celld deploy`
 refuse them. `ADMINS` is a JSON var, an array, as on Cloudflare. The module exports
 `celldFilter(config)`, which applies the workaround to one Wrangler config, and
