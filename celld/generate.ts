@@ -13,16 +13,16 @@
 //   --no-router         serve the frontend from the workshop and make it the primary Worker.
 //                       celld drops a WebSocket response returned through a service binding, so the
 //                       router cannot proxy the /api WebSocket.
+//
+// Importing the module writes nothing: `celldFilter` applies the workarounds to one config, and
+// `generateConfigs` builds every Worker's config.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
-const keepUnsupported = process.argv.includes("--keep-unsupported");
-const noRouter = process.argv.includes("--no-router");
-const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? "http://127.0.0.1:8790";
 
-type Config = Record<string, any>;
+export type Config = Record<string, any>;
 
 /** Each Worker's package directory, relative to the project root. */
 const packages = {
@@ -54,6 +54,32 @@ const SUPPORTED_KEYS = new Set([
   "rules",
 ]);
 
+/**
+ * Applies the celld workarounds to one Wrangler config and returns a new config, with the keys it
+ * dropped. The input is not changed.
+ */
+export function celldFilter(input: Config): { config: Config; dropped: string[] } {
+  const config = structuredClone(input);
+  // celld runs the build itself; the capnweb-validate step must run before deploy.
+  const dropped = Object.keys(config).filter((key) => !SUPPORTED_KEYS.has(key));
+  for (const key of dropped) delete config[key];
+  delete config.$schema;
+  // celld has no `fallthrough`: a rule's extension always selects its loader.
+  if (config.rules?.some((rule: Config) => "fallthrough" in rule)) {
+    for (const rule of config.rules) delete rule.fallthrough;
+    dropped.push("rules[].fallthrough");
+  }
+  // celld exposes a class as a namespace in `ctx.exports` only when a `durable_objects` binding
+  // names it; Cloudflare also does so for a class that only a migration declares.
+  const migrated: string[] = (config.migrations ?? []).flatMap((m: Config) => m.new_sqlite_classes ?? []);
+  if (migrated.length) {
+    config.durable_objects = {
+      bindings: migrated.map((name) => ({ name: `CELLD_DO_${name}`, class_name: name })),
+    };
+  }
+  return { config, dropped };
+}
+
 function readJsonc(path: string): Config {
   const source = readFileSync(path, "utf8");
   // The base configs carry only whole-line comments.
@@ -72,96 +98,108 @@ function base(worker: Worker): Config {
   return rebase(readJsonc(join(root, packages[worker], "wrangler.jsonc")), packages[worker]);
 }
 
-const configs: Record<Worker, Config> = {} as Record<Worker, Config>;
-
-configs.router = base("router");
-configs.router.services = [
-  { binding: "WORKSHOP_BACKEND", service: "workshop-backend" },
-  { binding: "GATEKEEPER_CONTEXT", service: "gatekeeper-context" },
-  { binding: "GATEKEEPER_SCHEDULER", service: "gatekeeper-scheduler" },
-  { binding: "GATEKEEPER_WEBSEARCH", service: "gatekeeper-websearch" },
-  { binding: "GATEKEEPER_CUSTOM", service: "custom-gatekeeper" },
-];
-
-configs["workshop-backend"] = base("workshop-backend");
-Object.assign(configs["workshop-backend"], {
-  // celld takes only string vars; upstream also parses ADMINS from a JSON string. Password-mode
-  // admins are usernames.
-  vars: { ADMINS: JSON.stringify(["admin"]), PUBLIC_BASE_URL: publicBaseUrl },
-  ai: { binding: "WORKERS_AI" },
-  services: [
-    {
-      binding: "ERROR_REPORTER",
-      service: "error-reporter",
-      entrypoint: "ErrorReporter",
-      props: { service: "workshop-backend", environment: "celld-trial" },
-    },
-    {
-      binding: "GATEKEEPER_CONTEXT",
-      service: "gatekeeper-context",
-      entrypoint: "GatekeeperVendor",
-      props: { sharingDomain: publicBaseUrl },
-    },
-    { binding: "GATEKEEPER_SCHEDULER", service: "gatekeeper-scheduler", entrypoint: "GatekeeperVendor" },
-    { binding: "GATEKEEPER_WEBSEARCH", service: "gatekeeper-websearch", entrypoint: "GatekeeperVendor" },
-    { binding: "GATEKEEPER_CUSTOM", service: "custom-gatekeeper", entrypoint: "GatekeeperVendor" },
-  ],
-  kv_namespaces: [
-    { binding: "BLUEPRINTS", id: "blueprints" },
-    { binding: "AVATARS", id: "avatars" },
-  ],
-  r2_buckets: [{ binding: "BLUEPRINT_CONTENT", bucket_name: "blueprint-content" }],
-});
-delete configs["workshop-backend"].assets;
-if (noRouter) {
-  configs["workshop-backend"].assets = {
-    ...configs.router.assets,
-    run_worker_first: ["/api", "/api/*", "/blueprint-screenshot", "/blueprint-screenshot/*"],
-  };
-}
-
-configs["gatekeeper-context"] = base("gatekeeper-context");
-configs["gatekeeper-context"].kv_namespaces = [
-  { binding: "CONTEXT_COLLECTIONS", id: "context-collections" },
-];
-
-configs["gatekeeper-scheduler"] = base("gatekeeper-scheduler");
-configs["gatekeeper-websearch"] = base("gatekeeper-websearch");
-
-configs["custom-gatekeeper"] = base("custom-gatekeeper");
-configs["custom-gatekeeper"].vars = {
-  CUSTOM_NAME: "celld trial",
-  CUSTOM_MESSAGE: "Cloudflare OS running on celld.",
+export type GenerateOptions = {
+  /** Serve the frontend from the workshop and make it the primary Worker. */
+  noRouter?: boolean;
+  /** Keep the keys celld refuses, so `celld deploy` rejects them. */
+  keepUnsupported?: boolean;
+  publicBaseUrl?: string;
 };
 
-configs["error-reporter"] = base("error-reporter");
+/** Every Worker's celld config, and the keys `celldFilter` dropped from each. */
+export function generateConfigs(options: GenerateOptions = {}): {
+  configs: Record<Worker, Config>;
+  dropped: Partial<Record<Worker, string[]>>;
+} {
+  const { noRouter = false, keepUnsupported = false } = options;
+  const publicBaseUrl = options.publicBaseUrl ?? "http://127.0.0.1:8790";
+  const configs: Record<Worker, Config> = {} as Record<Worker, Config>;
 
-const dropped: Record<string, string[]> = {};
-for (const worker of deployOrder) {
-  const config = configs[worker];
-  // celld runs the build itself; the capnweb-validate step must run before deploy.
-  if (!keepUnsupported) {
-    const unsupported = Object.keys(config).filter((key) => !SUPPORTED_KEYS.has(key));
-    for (const key of unsupported) delete config[key];
-    if (unsupported.length) dropped[worker] = unsupported;
-  }
-  delete config.$schema;
-  // celld has no `fallthrough`: a rule's extension always selects its loader.
-  if (!keepUnsupported && config.rules?.some((rule: Config) => "fallthrough" in rule)) {
-    for (const rule of config.rules) delete rule.fallthrough;
-    (dropped[worker] ??= []).push("rules[].fallthrough");
-  }
-  // celld exposes a class as a namespace in `ctx.exports` only when a `durable_objects` binding
-  // names it; Cloudflare also does so for a class that only a migration declares.
-  const migrated: string[] = (config.migrations ?? []).flatMap((m: Config) => m.new_sqlite_classes ?? []);
-  if (!keepUnsupported && migrated.length) {
-    config.durable_objects = {
-      bindings: migrated.map((name) => ({ name: `CELLD_DO_${name}`, class_name: name })),
+  configs.router = base("router");
+  configs.router.services = [
+    { binding: "WORKSHOP_BACKEND", service: "workshop-backend" },
+    { binding: "GATEKEEPER_CONTEXT", service: "gatekeeper-context" },
+    { binding: "GATEKEEPER_SCHEDULER", service: "gatekeeper-scheduler" },
+    { binding: "GATEKEEPER_WEBSEARCH", service: "gatekeeper-websearch" },
+    { binding: "GATEKEEPER_CUSTOM", service: "custom-gatekeeper" },
+  ];
+
+  configs["workshop-backend"] = base("workshop-backend");
+  Object.assign(configs["workshop-backend"], {
+    // celld takes only string vars; upstream also parses ADMINS from a JSON string. Password-mode
+    // admins are usernames.
+    vars: { ADMINS: JSON.stringify(["admin"]), PUBLIC_BASE_URL: publicBaseUrl },
+    ai: { binding: "WORKERS_AI" },
+    services: [
+      {
+        binding: "ERROR_REPORTER",
+        service: "error-reporter",
+        entrypoint: "ErrorReporter",
+        props: { service: "workshop-backend", environment: "celld-trial" },
+      },
+      {
+        binding: "GATEKEEPER_CONTEXT",
+        service: "gatekeeper-context",
+        entrypoint: "GatekeeperVendor",
+        props: { sharingDomain: publicBaseUrl },
+      },
+      { binding: "GATEKEEPER_SCHEDULER", service: "gatekeeper-scheduler", entrypoint: "GatekeeperVendor" },
+      { binding: "GATEKEEPER_WEBSEARCH", service: "gatekeeper-websearch", entrypoint: "GatekeeperVendor" },
+      { binding: "GATEKEEPER_CUSTOM", service: "custom-gatekeeper", entrypoint: "GatekeeperVendor" },
+    ],
+    kv_namespaces: [
+      { binding: "BLUEPRINTS", id: "blueprints" },
+      { binding: "AVATARS", id: "avatars" },
+    ],
+    r2_buckets: [{ binding: "BLUEPRINT_CONTENT", bucket_name: "blueprint-content" }],
+  });
+  delete configs["workshop-backend"].assets;
+  if (noRouter) {
+    configs["workshop-backend"].assets = {
+      ...configs.router.assets,
+      run_worker_first: ["/api", "/api/*", "/blueprint-screenshot", "/blueprint-screenshot/*"],
     };
   }
-  writeFileSync(join(root, `celld.${worker}.jsonc`), JSON.stringify(config, null, 2) + "\n");
+
+  configs["gatekeeper-context"] = base("gatekeeper-context");
+  configs["gatekeeper-context"].kv_namespaces = [
+    { binding: "CONTEXT_COLLECTIONS", id: "context-collections" },
+  ];
+
+  configs["gatekeeper-scheduler"] = base("gatekeeper-scheduler");
+  configs["gatekeeper-websearch"] = base("gatekeeper-websearch");
+
+  configs["custom-gatekeeper"] = base("custom-gatekeeper");
+  configs["custom-gatekeeper"].vars = {
+    CUSTOM_NAME: "celld trial",
+    CUSTOM_MESSAGE: "Cloudflare OS running on celld.",
+  };
+
+  configs["error-reporter"] = base("error-reporter");
+
+  const dropped: Partial<Record<Worker, string[]>> = {};
+  for (const worker of deployOrder) {
+    if (keepUnsupported) {
+      delete configs[worker].$schema;
+      continue;
+    }
+    const filtered = celldFilter(configs[worker]);
+    configs[worker] = filtered.config;
+    if (filtered.dropped.length) dropped[worker] = filtered.dropped;
+  }
+  return { configs, dropped };
 }
 
-for (const [worker, keys] of Object.entries(dropped)) {
-  console.error(`${worker}: dropped ${keys.join(", ")}`);
+if (import.meta.main) {
+  const { configs, dropped } = generateConfigs({
+    noRouter: process.argv.includes("--no-router"),
+    keepUnsupported: process.argv.includes("--keep-unsupported"),
+    publicBaseUrl: process.env.PUBLIC_BASE_URL,
+  });
+  for (const worker of deployOrder) {
+    writeFileSync(join(root, `celld.${worker}.jsonc`), JSON.stringify(configs[worker], null, 2) + "\n");
+  }
+  for (const [worker, keys] of Object.entries(dropped)) {
+    console.error(`${worker}: dropped ${keys.join(", ")}`);
+  }
 }
