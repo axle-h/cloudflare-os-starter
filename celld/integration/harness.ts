@@ -121,7 +121,19 @@ function dropForeignDurableObjectBindings(config: WorkerConfig): string[] {
 }
 
 /**
- * The adapter's other workaround: `wrangler dev` binds a KV namespace by its `preview_id`, and the
+ * Another workaround: upstream's fixture gatekeeper sets the `experimental` compatibility flag,
+ * which celld refuses at deploy, as Cloudflare does (celld plan item 1.16). The fixture uses none of
+ * the APIs the flag gates, so the flag is dropped, with a note on stderr.
+ */
+function dropExperimentalFlag(config: WorkerConfig): string[] {
+  const flags = config.compatibility_flags as string[] | undefined;
+  if (!flags?.includes("experimental")) return [];
+  config.compatibility_flags = flags.filter(flag => flag !== "experimental");
+  return ["compatibility flag experimental"];
+}
+
+/**
+ * A third workaround: `wrangler dev` binds a KV namespace by its `preview_id`, and the
  * suites' configs give only that, but `celld dev` requires `id` (it ignores `preview_id`). A binding
  * without an `id` takes its `preview_id` as the id.
  */
@@ -146,6 +158,7 @@ function celldConfigs(dir: string, configs: WorkerConfig[]): Record<string, Work
     const config = filtered.config as WorkerConfig;
     const dropped = filtered.dropped;
     dropped.push(...dropForeignDurableObjectBindings(config));
+    dropped.push(...dropExperimentalFlag(config));
     if (dropped.length > 0) {
       console.error(`celld harness: ${config.name}: dropped ${dropped.join(", ")}`);
     }

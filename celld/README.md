@@ -164,7 +164,9 @@ It first builds the validated Worker trees the suites boot from (upstream's `bui
 - **Workarounds.** Besides `celldFilter`'s, the harness uses a KV binding's `preview_id` as its
   `id` when it has none (`celld dev` requires `id`; `wrangler dev` uses `preview_id`), and drops
   the fixture gatekeeper's `WORKSHOP_OVERSEER`, a Durable Object binding to another script's
-  class (`script_name`), which celld refuses. Each prints a line on stderr.
+  class (`script_name`), which celld refuses. It also drops the fixture gatekeeper's
+  `experimental` compatibility flag, which celld refuses as Cloudflare does; the fixture uses
+  none of the APIs it gates. Each prints a line on stderr.
 
 `integration/status.json` is the record:
 
