@@ -86,6 +86,9 @@ done
 
 mkdir -p "$STATE"
 . celld/env.sh
+# Exactly the mock LLM (celld plan item 1.9), whatever the shell has: the Workers reach no other
+# private address.
+export CELLD_FETCH_PRIVATE_ALLOW="127.0.0.1:$MOCK_LLM_PORT"
 export PUBLIC_BASE_URL="http://127.0.0.1:$PORT"
 # celld (object_store) and azurite-container.py both read the emulator's address from here.
 export AZURITE_BLOB_STORAGE_URL="http://127.0.0.1:$AZURITE_PORT"

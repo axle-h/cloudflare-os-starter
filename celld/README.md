@@ -114,8 +114,9 @@ with model `scripted`.
 - **Errors**, scripted or not, are OpenAI error bodies: `{"error": {"message", "type"}}`.
 - **Self-test:** `node celld/mock-llm.ts --self-test` runs every endpoint on a free port.
 
-`env.sh` sets `CELLD_FETCH_PRIVATE_ALLOW` to `127.0.0.1:$MOCK_LLM_PORT` (default 11434), so the
-node may reach the mock once celld refuses private fetch targets.
+celld refuses Worker fetches to private addresses (plan item 1.9), so the node needs
+`CELLD_FETCH_PRIVATE_ALLOW` to reach the mock. `env.sh` sets it to `127.0.0.1:$MOCK_LLM_PORT`
+(default 11434) unless the shell already has it; `e2e.sh` always sets exactly that entry.
 
 ## Upstream's integration suites
 
