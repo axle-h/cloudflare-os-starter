@@ -1,0 +1,7 @@
+// The adapter self-test's probe Worker (celld/integration/adapter.test.ts): it makes the global
+// fetch() a test describes and reports what it saw.
+{
+  "name": "adapter-probe",
+  "main": "src/probe.js",
+  "compatibility_date": "2026-09-04"
+}

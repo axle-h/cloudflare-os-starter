@@ -8,7 +8,8 @@ export CELLD="${CELLD:-$HOME/projects/celld/target/release/celld}"
 # private fetch targets (plan item 1.9), the node needs this to reach it. Name exactly the
 # host:port entries needed.
 export CELLD_FETCH_PRIVATE_ALLOW="${CELLD_FETCH_PRIVATE_ALLOW:-127.0.0.1:${MOCK_LLM_PORT:-11434}}"
-export CELLD_ESBUILD="${CELLD_ESBUILD:-$(ls -d "$(dirname "${BASH_SOURCE[0]}")"/../node_modules/.pnpm/esbuild@*/node_modules/esbuild/bin/esbuild | tail -1)}"
+# Absolute, so it holds for a celld started from another directory (the integration adapter's).
+export CELLD_ESBUILD="${CELLD_ESBUILD:-$(ls -d "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"/node_modules/.pnpm/esbuild@*/node_modules/esbuild/bin/esbuild | tail -1)}"
 
 # Local trial account, created on the trial deployment through the sign-up page.
 export CFOS_TRIAL_USER=admin

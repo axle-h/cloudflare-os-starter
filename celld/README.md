@@ -117,6 +117,82 @@ with model `scripted`.
 `env.sh` sets `CELLD_FETCH_PRIVATE_ALLOW` to `127.0.0.1:$MOCK_LLM_PORT` (default 11434), so the
 node may reach the mock once celld refuses private fetch targets.
 
+## Upstream's integration suites
+
+`celld/integration.sh` runs upstream's own end-to-end suites
+(`cloudflare-os/packages/integration-tests/__tests__`) on celld, unchanged:
+
+```sh
+celld/integration.sh                     # every suite status.json lists as passing or pending
+celld/integration.sh workshop-lifecycle  # one suite
+celld/integration.sh --update            # record pending suites that now pass
+celld/integration.sh --workerd           # the same suites on upstream's harness, as the reference
+```
+
+It first builds the validated Worker trees the suites boot from (upstream's `build:test-gatekeeper`;
+`--no-prebuild` skips that), then runs vitest with `integration/vitest.config.ts`. With
+`CFOS_RUNTIME=celld`, which the runner sets, the suites' `../src/harness.js` and
+`../src/network-interceptor.js` resolve to this directory's `integration/harness.ts` and
+`integration/network-interceptor.ts`:
+
+- **The harness.** `startCelldHarness()` (also exported as upstream's `startHarness` and
+  `startTestGatekeeperHarness`) returns upstream's `Harness`. It builds the configs as upstream's
+  harness does, with the suite's patches, passes each through `generate.ts`'s `celldFilter`, and
+  runs them all under one multi-config `celld dev --port 0 --no-watch --no-build`. The primary
+  Worker is a generated `test-front`: it service-binds every Worker, forwards `/__worker/<name>/…`
+  to that Worker (`fetchWorker`), and passes everything else, the `/api` WebSocket included, to the
+  Workshop. `redeployWorkshop()` restarts `celld dev` on the same port and state with the new
+  Workshop config. `server.close()`, `listen()`, `fetch()` and `getWorker(name).fetch()` work;
+  the rest of wrangler's `TestHarness` throws, naming the method.
+- **The network.** Every Worker's main module is wrapped so `integration/upstream-shim.js` runs
+  first: it sends the Worker's global `fetch()` to `mock-upstream.ts`, a Node server in the test
+  process, which hands each request, with the URL the Worker asked for, to the suite's
+  `NetworkInterceptor` handlers (`scriptedChatCompletions`, `github-fake.ts` and the rest). So the
+  model provider the suites configure, `api.cloudflare.com`, is answered there, as is anything
+  else. As under wrangler's harness, a request no handler answers is recorded for
+  `getUnmockedCalls()` and the Worker gets a 500, as does a request whose handler throws; loopback
+  requests and those the interceptor's `allow` accepts go to the real address. A redirect comes
+  back through the mock, so it can only lead to a URL the handlers answer (the suites' fakes
+  redirect only within themselves); with `redirect: "manual"` the Worker sees the handler's own
+  `Location`. `response.url` is the URL the Worker asked for. Each node gets
+  `CELLD_FETCH_PRIVATE_ALLOW` set to exactly the mock's `127.0.0.1:<port>`.
+- **What it bypasses.** The suites' outbound requests never take celld's real outbound path: no
+  TLS, no DNS, no proxy settings, and none of plan item 1.9's egress policy, which sees only
+  requests to the mock's loopback address. Those are tested by celld's own conformance cases,
+  not here.
+- **Workarounds.** Besides `celldFilter`'s, the harness uses a KV binding's `preview_id` as its
+  `id` when it has none (`celld dev` requires `id`; `wrangler dev` uses `preview_id`), and drops
+  the fixture gatekeeper's `WORKSHOP_OVERSEER`, a Durable Object binding to another script's
+  class (`script_name`), which celld refuses. Each prints a line on stderr.
+
+`integration/status.json` is the record:
+
+- `passing` lists the suites that pass on celld, and only grows. `--update` adds a pending (or
+  unlisted) suite that passed, never an excluded one.
+- `pending` lists the runnable suites that do not pass yet, each as `"<text of its first error> ->
+  <the trial failure or plan item behind it>"`. Every one passes on `--workerd`. The runner warns
+  when a suite's first error no longer contains the recorded text.
+- `excluded` lists the rest, with the reason.
+
+The run fails when a passing suite fails: it runs that suite once more and calls it a REGRESSION,
+or FLAKY if the second run passed. It also fails on an error no test owned, on a suite with no
+result, when vitest fails for anything but a pending, excluded or unlisted suite failing, and when
+the adapter's own checks fail. Those, `integration/adapter.test.ts`, run first against a probe
+Worker (`integration/fixtures/probe/`). They check `fetchWorker`; model SSE streaming; a
+handler's Content-Length; a followed redirect, and a manual one's `Location` and URL; aborts; the
+500s; and that `redeployWorkshop` keeps the URL and storage and applies the new config. Two
+`it.fails` cases pin known celld gaps (plan item 1.20's `response.url` after a redirect, and
+`clone()` of a fetched response), and fail once celld fixes them.
+
+On Ctrl-C (or SIGTERM, SIGHUP), each test process kills its nodes, and the runner then kills any
+process still running in a harness directory before it exits.
+
+Each suite file starts its own node and mock upstream, both on free ports of 127.0.0.1, so the
+runner uses no fixed port and can run beside the trial node or `e2e.sh`.
+`CELLD_INTEGRATION_JOBS=3` runs three suite files at once (the default is one). Every harness keeps
+its generated configs, the node's state and its `dev.log` under
+`.celld/integration/<suite>-<random>/` until the next run.
+
 ## Manual setup
 
 1. Start a bucket. celld needs S3, GCS or Azure; locally, the Azurite emulator works:

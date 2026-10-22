@@ -1,0 +1,58 @@
+{
+  "$comment": [
+    "Upstream's integration suites on celld (celld plan item 0.5); celld/integration.sh runs them.",
+    "passing: suites that pass on celld. It only grows: the runner fails when one stops passing (REGRESSION, or FLAKY if a second run passes), and --update adds a pending or unlisted suite that passes, never an excluded one.",
+    "pending: runnable suites that do not pass yet, each as \"<text of its first error> -> <the trial failure or plan item it maps to>\"; the runner warns when a suite's first error no longer contains that text. All of them pass on the workerd reference (--workerd).",
+    "excluded: suites the runner does not run by default, with the reason."
+  ],
+  "passing": [
+    "workshop-user-directory.test.ts"
+  ],
+  "pending": {
+    "workshop-lifecycle.test.ts": "'getMetadata' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-agent.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-agent-actions.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-agent-context.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-agent-create-resource.test.ts": "'getMetadata' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-agent-files.test.ts": "'getMetadata' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-agent-revert-elision.test.ts": "'getMetadata' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-agent-session-loss.test.ts": "'getMetadata' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-blueprints.test.ts": "Invalid reader mode 'byob' -> trial failure 9, plan item 1.8. Its other cases: 'createGadget'/'subscribeToWorkpieces' is not a function and 'RPC stubs cannot cross isolate boundaries yet' (Phase 3), the account-stub clone (trial failure 7), and its redeploy case needs Wrangler's `alias` key (bundleBlueprints), which celld refuses (not in the plan)",
+    "workshop-connections.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3; also 'subscriber.ready is not a function' (trial failures 6 and 8, Phase 3)",
+    "observer-exclusion.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "observer-reverification.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3; its three harness cases pass",
+    "observer-role-scope.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "observer-scope-promotion.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-hooks.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-sharing.test.ts": "'getMetadata' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3; also Invalid reader mode 'byob' (plan item 1.8)",
+    "workshop-presence.test.ts": "'getMetadata' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "ai-gateway-cost.test.ts": "'newChat' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "auto-approval-policy.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "connect-handoff.test.ts": "function () {} could not be cloned -> trial failure 7: the connect flow stores the account stub; Phase 2, then Phase 3",
+    "context-sharing.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "sensitive-observations.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-action-history.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-admin-policy.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-callable-agents.test.ts": "'getMetadata' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-changes.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-chat-recovery.test.ts": "'newChat' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-console-logs.test.ts": "'subscribeToWorkpieces' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-gadget-removal.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-prompt-cache.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-restricted-web-fetch.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-steering.test.ts": "'newChat' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-user-models.test.ts": "'newChat' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3",
+    "workshop-use-role.test.ts": "function () {} could not be cloned -> trial failure 7: provisionAmbientAccount stores the gatekeeper's ctx.exports account stub; Phase 2 (J2), then Phase 3",
+    "workshop-worktrees.test.ts": "'subscribeToWorkpieces' is not a function -> trial failure 6: an RpcTarget returned from a DO (the Overseer client) loses its methods; Phase 3"
+  },
+  "excluded": {
+    "external-message-round-trip.test.ts": "The fixture gatekeeper's WORKSHOP_OVERSEER is a Durable Object binding to another script's class (script_name), which celld refuses; the adapter drops it, so these suites cannot pass. Their first error is 'ctx.restore() is not implemented in celld' (Phase 5).",
+    "external-message-verification.test.ts": "As external-message-round-trip: needs the dropped script_name binding WORKSHOP_OVERSEER; first error is the account-stub clone (trial failure 7).",
+    "github-hooks.test.ts": "Needs the GitHub vendor fake and the gatekeeper-github integration build (plan 0.5: vendor fakes are out of scope).",
+    "github-hooks-off.test.ts": "As github-hooks.",
+    "google-hooks-upgrade.test.ts": "Redeploys a gatekeeper in place (server.update), with the Google vendor fake and an upgrade-base build.",
+    "network-interceptor.test.ts": "Tests upstream's Node-side NetworkInterceptor itself; under CFOS_RUNTIME=celld the adapter's interceptor replaces it, by design.",
+    "mock-model.test.ts": "Node only, no Workers: it passes on any runtime, so it proves nothing about celld.",
+    "worker-inputs.test.ts": "Node only, no Workers: it passes on any runtime, so it proves nothing about celld."
+  }
+}
