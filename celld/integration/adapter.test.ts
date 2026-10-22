@@ -142,9 +142,9 @@ it.fails("a clone of a fetched response keeps its URL (celld clone() gap)", asyn
       .toMatchObject({ cloneUrl: "https://api.example.test/echo" });
 });
 
-// celld plan item 1.20: after a followed redirect, celld's `response.url` is the original URL and
-// `redirected` is false. When 1.20 lands this fails; make it an `it`.
-it.fails("reports the final URL of a followed redirect (celld plan item 1.20)", async () => {
+// celld plan item 1.20: after a followed redirect, `response.url` is the final URL and `redirected`
+// is true, as in workerd.
+it("reports the final URL of a followed redirect", async () => {
   expect(await probe("https://api.example.test/redirect")).toMatchObject({
     redirected: true, url: "https://api.example.test/after-redirect?step=2",
   });
