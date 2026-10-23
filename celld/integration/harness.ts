@@ -132,23 +132,6 @@ function dropExperimentalFlag(config: WorkerConfig): string[] {
   return ["compatibility flag experimental"];
 }
 
-/**
- * A third workaround: `wrangler dev` binds a KV namespace by its `preview_id`, and the
- * suites' configs give only that, but `celld dev` requires `id` (it ignores `preview_id`). A binding
- * without an `id` takes its `preview_id` as the id.
- */
-function previewIdsAsIds(config: WorkerConfig): string[] {
-  const namespaces = config.kv_namespaces as { binding: string; id?: string; preview_id?: string }[]
-      | undefined;
-  const changed: string[] = [];
-  for (const namespace of namespaces ?? []) {
-    if (namespace.id !== undefined || namespace.preview_id === undefined) continue;
-    namespace.id = namespace.preview_id;
-    changed.push(namespace.binding);
-  }
-  return changed;
-}
-
 /** Every Worker's config, ready for celld: filtered, without a build, its main wrapped. */
 function celldConfigs(dir: string, configs: WorkerConfig[]): Record<string, WorkerConfig> {
   const out: Record<string, WorkerConfig> = {};
@@ -161,10 +144,6 @@ function celldConfigs(dir: string, configs: WorkerConfig[]): Record<string, Work
     dropped.push(...dropExperimentalFlag(config));
     if (dropped.length > 0) {
       console.error(`celld harness: ${config.name}: dropped ${dropped.join(", ")}`);
-    }
-    const previews = previewIdsAsIds(config);
-    if (previews.length > 0) {
-      console.error(`celld harness: ${config.name}: kv ${previews.join(", ")}: preview_id used as id`);
     }
     // The validated trees are prebuilt (upstream's global setup checks them), and celld dev runs
     // with --no-build, so a build command would only mislead.

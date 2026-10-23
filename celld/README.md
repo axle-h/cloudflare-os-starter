@@ -161,12 +161,11 @@ It first builds the validated Worker trees the suites boot from (upstream's `bui
   TLS, no DNS, no proxy settings, and none of plan item 1.9's egress policy, which sees only
   requests to the mock's loopback address. Those are tested by celld's own conformance cases,
   not here.
-- **Workarounds.** Besides `celldFilter`'s, the harness uses a KV binding's `preview_id` as its
-  `id` when it has none (`celld dev` requires `id`; `wrangler dev` uses `preview_id`), and drops
-  the fixture gatekeeper's `WORKSHOP_OVERSEER`, a Durable Object binding to another script's
-  class (`script_name`), which celld refuses. It also drops the fixture gatekeeper's
-  `experimental` compatibility flag, which celld refuses as Cloudflare does; the fixture uses
-  none of the APIs it gates. Each prints a line on stderr.
+- **Workarounds.** Besides `celldFilter`'s, the harness drops the fixture gatekeeper's
+  `WORKSHOP_OVERSEER`, a Durable Object binding to another script's class (`script_name`), which
+  celld refuses. It also drops the fixture gatekeeper's `experimental` compatibility flag, which
+  celld refuses as Cloudflare does; the fixture uses none of the APIs it gates. Each prints a line
+  on stderr.
 
 `integration/status.json` is the record:
 
@@ -183,9 +182,8 @@ result, when vitest fails for anything but a pending, excluded or unlisted suite
 the adapter's own checks fail. Those, `integration/adapter.test.ts`, run first against a probe
 Worker (`integration/fixtures/probe/`). They check `fetchWorker`; model SSE streaming; a
 handler's Content-Length; a followed redirect, and a manual one's `Location` and URL; aborts; the
-500s; and that `redeployWorkshop` keeps the URL and storage and applies the new config. Two
-`it.fails` cases pin known celld gaps (plan item 1.20's `response.url` after a redirect, and
-`clone()` of a fetched response), and fail once celld fixes them.
+500s; a clone of a fetched response; and that `redeployWorkshop` keeps the URL and storage and
+applies the new config.
 
 On Ctrl-C (or SIGTERM, SIGHUP), each test process kills its nodes, and the runner then kills any
 process still running in a harness directory before it exits.

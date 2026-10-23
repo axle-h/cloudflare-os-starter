@@ -133,11 +133,9 @@ it("shows a manual redirect with the handler's own Location and the Worker's URL
   });
 });
 
-// Not in celld's plan yet: celld's Response.clone() throws "Cannot clone a streaming response before
-// consumption" on a fetched body, and its clones carry no `url` or `redirected`. workerd tees the
-// body and keeps both. The shim keeps its URL on a clone exactly where the runtime does, so this
-// passes once celld's clone() does; then make it an `it`.
-it.fails("a clone of a fetched response keeps its URL (celld clone() gap)", async () => {
+// celld plan item 1.23: a clone of a fetched response tees its body and keeps its `url`, as in
+// workerd. The shim keeps its URL on a clone exactly where the runtime does.
+it("a clone of a fetched response keeps its URL", async () => {
   expect(await probe("https://api.example.test/echo"))
       .toMatchObject({ cloneUrl: "https://api.example.test/echo" });
 });
